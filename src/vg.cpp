@@ -8,9 +8,9 @@
 // - Allow strokes and fills with gradients and image patterns to be used as clip masks (might
 // be useful if the same command list is used both inside and outside a beginClip()/endClip() 
 // block)
-//#include <vg/vg.h>
-//#include <vg/path.h>
-//#include <vg/stroker.h>
+////#include <vg/vg.h>
+////#include <vg/path.h>
+////#include <vg/stroker.h>
 #include "vg_util.h"
 #if VG_USE_FONTSTASH
 	#include "libs/fontstash.h"
@@ -1143,6 +1143,22 @@ void end(Context* ctx)
 	const uint32_t numVertexBuffers = ctx->m_NumVertexBuffers;
 	for (uint32_t iVB = ctx->m_FirstVertexBufferID; iVB < numVertexBuffers; ++iVB) {
 		VertexBuffer* vb = &ctx->m_VertexBuffers[iVB];
+		
+		if (!vb->m_Count) {
+			releaseVertexBufferData_Vec2(ctx, vb->m_Pos);
+			releaseVertexBufferData_Uint32(ctx, vb->m_Color);
+
+	#if VG_CONFIG_UV_INT16
+			releaseVertexBufferData_UV(ctx, vb->m_UV);
+	#else
+			releaseVertexBufferData_Vec2(ctx, vb->m_UV);
+	#endif
+			vb->m_Pos = nullptr;
+			vb->m_UV = nullptr;
+			vb->m_Color = nullptr;
+			continue;
+			}
+		
 		GPUVertexBuffer* gpuvb = &ctx->m_GPUVertexBuffers[iVB];
 		
 		const uint32_t maxVBVertices = ctx->m_Config.m_MaxVBVertices;
@@ -1176,11 +1192,16 @@ void end(Context* ctx)
 	// Update bgfx index buffer...
 	IndexBuffer* ib = &ctx->m_IndexBuffers[ctx->m_ActiveIndexBufferID];
 	GPUIndexBuffer* gpuib = &ctx->m_GPUIndexBuffers[ctx->m_ActiveIndexBufferID];
-	const bgfx::Memory* indexMem = bgfx::makeRef(&ib->m_Indices[0], sizeof(uint16_t) * ib->m_Count, ib->m_Count ? releaseIndexBufferCallback : 0, ctx);
-	if (!bgfx::isValid(gpuib->m_bgfxHandle)) {
-		gpuib->m_bgfxHandle = bgfx::createDynamicIndexBuffer(indexMem, BGFX_BUFFER_ALLOW_RESIZE);
-	} else {
-		bgfx::update(gpuib->m_bgfxHandle, 0, indexMem);
+	if (!ib->m_Count) {
+		releaseIndexBuffer(ctx, (uint16_t*) ib);
+		}
+	else {
+		const bgfx::Memory* indexMem = bgfx::makeRef(&ib->m_Indices[0], sizeof(uint16_t) * ib->m_Count, releaseIndexBufferCallback, ctx);
+		if (!bgfx::isValid(gpuib->m_bgfxHandle)) {
+			gpuib->m_bgfxHandle = bgfx::createDynamicIndexBuffer(indexMem, BGFX_BUFFER_ALLOW_RESIZE);
+		} else {
+			bgfx::update(gpuib->m_bgfxHandle, 0, indexMem);
+		}
 	}
 
 	const uint16_t viewID = ctx->m_ViewID;
